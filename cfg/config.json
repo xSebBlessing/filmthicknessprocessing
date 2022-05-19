@@ -1,0 +1,20 @@
+{
+  "data_directory": ["sample_data"],
+  "visualise": false,
+  "cam_dynamic_range": 14,
+  "image_indices": {
+    "bg": 0,
+    "ref": 1,
+    "meas": [2]
+  },
+  "refractive_indices": {
+    "water": 1.33,
+    "pmma": 1.49
+  },
+  "materials": {
+    "transparent": "pmma",
+    "film": "water"
+  },
+  "px_p_5mm": 108,
+  "prism_angle": 45
+}
