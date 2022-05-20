@@ -1,4 +1,4 @@
-# Film Thickness Image Processing
+# Total Reflective Film Thickness Image Processing
 
 This repository accompanies the contribution
 
