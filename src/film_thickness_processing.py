@@ -22,6 +22,7 @@ from scipy import optimize as opt
 
 # visualisation
 from matplotlib import pyplot as plt
+from matplotlib import patches
 
 # custom angle class for rad / deg handling
 from . import Angle
@@ -100,6 +101,31 @@ def x_corr_ims(im1: np.ndarray, im2: np.ndarray) -> np.ndarray:
     return result
 
 
+def find_correlation_peak(corr_map: np.ndarray, visualize: bool = False):
+    peak = np.array(np.unravel_index(np.argmax(corr_map), corr_map.shape))
+
+    if visualize:
+        image_center = np.array(corr_map.shape) // 2
+        extent = [-image_center[1], image_center[1], image_center[0], -image_center[0]]
+
+        fig, ax = plt.subplots(figsize=(14, 8))
+
+        im = ax.imshow(corr_map, extent=extent)
+        ax.scatter(peak[1]-image_center[1]+0.5, peak[0]-image_center[0]+0.5, c="red", marker="x")
+
+        ax.set_title("Correlation map with initial peak")
+        ax.set_xlabel(r"$\Delta$x [px]")
+        ax.set_ylabel(r"$\Delta$y [px]")
+
+        cax = fig.add_axes([ax.get_position().x1+0.01, ax.get_position().y0, 0.02, ax.get_position().height])
+        cb = fig.colorbar(im, cax=cax)
+        cb.set_label("Correlation level", rotation=90, labelpad=12)
+
+        plt.show()
+
+    return peak
+
+
 def paraboloid(xy: list[Union[list[int], np.ndarray], Union[list[int], np.ndarray]],
                x0: int, y0: int, a: float, b: float, c: float) -> np.ndarray:
     """
@@ -134,7 +160,7 @@ def residual(params: list, xy: list[Union[list[int], np.ndarray], Union[list[int
 
 
 def refine_peak_position(corr_map: np.ndarray, initial_peak: np.ndarray,
-                         k_size: int = 11, vis: bool = False) -> np.ndarray:
+                         k_size: int = 11, visualize: bool = False) -> np.ndarray:
     """
     Refines the correlation peak position to sub pixel accuracy by fitting a paraboloid to the correlation peak and
     evaluating its maximum
@@ -142,7 +168,7 @@ def refine_peak_position(corr_map: np.ndarray, initial_peak: np.ndarray,
     :param corr_map: correlation map of the image pair
     :param initial_peak: initial absolute correlation peak position from maximum function in px
     :param k_size: kernel size around initial peak to consider; must be uneven
-    :param vis: visualisation flag
+    :param visualize: visualization flag
     :return: refined absolute peak position in px
     """
 
@@ -152,39 +178,77 @@ def refine_peak_position(corr_map: np.ndarray, initial_peak: np.ndarray,
         exit(-1)
 
     # define x and y range of correlation map to consider
+    x0 = initial_peak[1]
+    y0 = initial_peak[0]
+
     k_size_half = k_size // 2
-    x = [initial_peak[1] - k_size_half + i for i in range(k_size)]
-    y = [initial_peak[0] - k_size_half + i for i in range(k_size)]
+
+    x = [x0 - k_size_half + i for i in range(k_size)]
+    y = [y0 - k_size_half + i for i in range(k_size)]
 
     # extract data of kernel size around the initial correlation peak
-    data = corr_map[initial_peak[0]-k_size_half:initial_peak[0]+k_size_half+1,
-                    initial_peak[1]-k_size_half:initial_peak[1]+k_size_half+1]
+    data = corr_map[y0-k_size_half:y0+k_size_half+1,
+                    x0-k_size_half:x0+k_size_half+1]
 
     # define initial guess for paraboloid fit using the initial peak position and the initial correlation peak value
-    initial_guess = [initial_peak[1], initial_peak[0], np.max(data), -5, -5]
+    initial_guess = [x0, y0, np.max(data), -5, -5]
 
     # noinspection PyTypeChecker
     # optimize parameters for minimal residuals between correlation data and paraboloid
     popt = opt.leastsq(residual, initial_guess, args=([x, y], data))
 
-    # extract x0 and y0
+    # extract refined x and y
     x_ref = popt[0][0]
     y_ref = popt[0][1]
 
-    if vis:
+    if visualize:
+        image_center = np.array(corr_map.shape) // 2
+
+        x0_vis = x0 - image_center[1]
+        y0_vis = y0 - image_center[0]
+
+        x_ref_vis = x_ref - image_center[1]
+        y_ref_vis = y_ref - image_center[0]
+
         # create mesh for fitting
-        x_lin = np.linspace(x[0], x[-1], 1000)
-        y_lin = np.linspace(y[0], y[-1], 1000)
+        x_lin = np.linspace(x0_vis - k_size_half - 0.5, x0_vis + k_size_half + 0.5, 1000)
+        y_lin = np.linspace(y0_vis - k_size_half - 0.5, y0_vis + k_size_half + 0.5, 1000)
 
         # compute optimal paraboloid
-        opt_fun = paraboloid([x_lin, y_lin], *popt[0]).reshape(1000, 1000)
+        params = [x_ref_vis, y_ref_vis, *popt[0][2:]]
+        opt_fun = paraboloid([x_lin, y_lin], *params).reshape(1000, 1000)
 
         # plot initial peak, refined peak and refinement function over correlation map
-        fig, ax = plt.subplots()
-        ax.imshow(data.reshape(k_size, k_size), extent=[x[0], x[-1], y[0], y[-1]])
-        ax.scatter(initial_peak[1], initial_peak[0], marker="x", c="red")
-        ax.scatter(x_ref, y_ref, marker="x", c="black")
-        ax.contour(x_lin, y_lin, opt_fun, colors="black")
+        extent_ax1 = [-image_center[1], image_center[1], image_center[0], -image_center[0]]
+
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
+
+        im = ax1.imshow(corr_map, extent=extent_ax1, vmin=np.min(data))
+
+        # rectangle for kernel
+        rect = patches.Rectangle((x[0]-image_center[1], y[0]-image_center[0]), k_size, k_size, linewidth=1,
+                                 edgecolor="r", facecolor="none")
+        ax1.add_patch(rect)
+
+        ax1.set_title("Correlation map with kernel")
+        ax1.set_xlabel(r"$\Delta$x [px]")
+        ax1.set_ylabel(r"$\Delta$y [px]")
+
+        extent_ax2 = [x0_vis - k_size_half - 0.5, x0_vis + k_size_half + 0.5,
+                      y0_vis + k_size_half + 0.5, y0_vis - k_size_half - 0.5]
+
+        ax2.imshow(data.reshape(k_size, k_size), vmin=np.min(data), extent=extent_ax2)
+        ax2.scatter(x0_vis, y0_vis, marker="x", c="red")
+        ax2.scatter(x_ref_vis, y_ref_vis, marker="x", c="black")
+        ax2.contour(x_lin, y_lin, opt_fun, colors="black")
+
+        ax2.set_title("initial and refined peak")
+        ax2.set_xlabel(r"$\Delta$x [px]")
+        ax2.set_ylabel(r"$\Delta$y [px]")
+
+        cax = fig.add_axes([ax2.get_position().x1+0.01, ax2.get_position().y0, 0.02, ax2.get_position().height])
+        cb = fig.colorbar(im, cax=cax)
+        cb.set_label("Correlation level", rotation=90, labelpad=12)
 
         plt.show()
 

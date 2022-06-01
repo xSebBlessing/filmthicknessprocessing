@@ -1,6 +1,6 @@
 {
   "data_directory": ["sample_data"],
-  "visualise": false,
+  "visualize": false,
   "cam_dynamic_range": 14,
   "image_indices": {
     "bg": 0,
@@ -16,5 +16,6 @@
     "film": "water"
   },
   "px_p_5mm": 108,
-  "prism_angle": 45
+  "prism_angle": 45,
+  "parallel_displacement_direction": [-1, 0]
 }
