@@ -100,20 +100,3 @@ if __name__ == "__main__":
     # total runtime
     end = time.time()
     print(f"Total runtime: {end-start:.2f}s.")
-
-    # visualise results
-    if visualise:
-        # create image with all laser beam imprints
-        cumulated = np.array(images[0])
-        for image in images[1:]:
-            cumulated += image
-
-        # clip at 1 to maintain image format
-        cumulated = np.clip(cumulated, 0, 1)
-
-        # detect original object center
-
-        # plot cumulated image with displacement vector
-        fig, ax = plt.subplots()
-        ax.imshow(cumulated, cmap="gray")
-        plt.show()
