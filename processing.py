@@ -16,6 +16,14 @@ from matplotlib import pyplot as plt
 from src import film_thickness_processing as proc
 
 
+def px2mm(x):
+    return x / 108 * 5
+
+
+def mm2px(x):
+     return x * 108 / 5
+
+
 if __name__ == "__main__":
     # track script runtime
     start = time.time()
@@ -26,7 +34,11 @@ if __name__ == "__main__":
         cfg = json.load(file)
 
     # flag for plot output
-    visualise = cfg["visualise"]
+    visualize = cfg["visualize"]
+
+    # Vector of displacement direction for laser beam reflected at a plane parallel to the prism's top plane
+    # enables correction of camera misalignment
+    parallel_displacement_dir = np.array(cfg["parallel_displacement_direction"])
 
     # calculate angle of incidence within the water
     water_angle = proc.calculate_angle_of_incidence_film(cfg)
@@ -41,24 +53,24 @@ if __name__ == "__main__":
     pairs = proc.get_pairs([i for i in range(len(images))])
 
     # calculate correlations of image pairs
-    corrs = []
+    corr_maps = []
     for (i, j) in pairs:
         print(f"Corr {im_names[i]} and {im_names[j]}")
-        corrs.append(proc.x_corr_ims(images[i], images[j]))
+        corr_maps.append(proc.x_corr_ims(images[i], images[j]))
 
     # set up lists to store detected displacements
-    displacements_mm = []
+    parallel_displacements_mm = []
     print("Finding displacements")
 
-    for corr, (i, j) in zip(corrs, pairs):
+    for corr_map, (i, j) in zip(corr_maps, pairs):
         print(f"Calculating displacement between {im_names[i]} and {im_names[j]}")
         displacement_start = time.time()
 
         # find maximum value in correlation map
-        initial_peak_px = np.array(np.unravel_index(np.argmax(corr), corr.shape))
+        initial_peak_px = proc.find_correlation_peak(corr_map, visualize=visualize)
 
         # refine peak by fitting a paraboloid to it
-        peak_px = proc.refine_peak_position(corr, initial_peak_px, vis=visualise)
+        peak_px = proc.refine_peak_position(corr_map, initial_peak_px, visualize=visualize)
 
         # calculate displacement
         # correlation of the image with itself yields a peak in the image center
@@ -68,18 +80,21 @@ if __name__ == "__main__":
         # convert to physical units with calibration
         displacement_mm = displacement_px / cfg["px_p_5mm"] * 5
 
+        # find component in displacement direction
+        parallel_displacement_mm = np.dot(parallel_displacement_dir, displacement_mm)
+
         # time and print results
         displacement_end = time.time()
         print(f"Finished in {displacement_end - displacement_start:.2f}s.")
-        print(f"Laser beam was displaced by {displacement_px[0]:.2f}px or {displacement_mm[0]:.2f}mm in y direction "
+        print(f"Laser beam was displaced by {parallel_displacement_mm:.2f}mm in y direction "
               f"between {im_names[i]} and {im_names[j]}.")
 
         # store results in lists for
-        displacements_mm.append(displacement_mm)
+        parallel_displacements_mm.append(parallel_displacement_mm)
 
     # calculate film thickness from beam displacement
-    for displacement in [displacements_mm[-1]]:
-        film_thickness = np.linalg.norm(displacement) / 2 / math.tan(water_angle.rad())
+    for displacement in [parallel_displacements_mm[-1]]:
+        film_thickness = displacement / 2 / math.tan(water_angle.rad())
         print(f"Water film thickness is estimated to {film_thickness:.2f}mm.")
 
     # total runtime
